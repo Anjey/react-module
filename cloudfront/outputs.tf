@@ -1,4 +1,4 @@
-output "dns_name" {
+output "domain_name" {
   value = [
     for record in aws_route53_record.cloudfront :
     record.name

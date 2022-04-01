@@ -19,7 +19,7 @@ resource "aws_security_group" "this" {
     content {
       from_port       = element(split("-", ingress.value.port), 0)
       to_port         = element(split("-", ingress.value.port), 1) # Returns ingress.value.port[0] value if ingress.value.port[1] element does not exist
-      protocol        = "tcp"
+      protocol        = lookup(ingress.value, "protocol", "tcp")
       cidr_blocks     = lookup(ingress.value, "cidr_blocks", [])
       security_groups = lookup(ingress.value, "security_groups", [])
       description     = lookup(ingress.value, "description", "")

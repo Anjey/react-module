@@ -14,7 +14,7 @@ locals {
   react_build_dir      = "${local.react_dir}/build/"
   react_package        = "package.json"
   react_app            = "App.js"
-  aws_ami_backend_name = "ami-020dbfd74af2ea06f"
+  aws_ami_backend_name = "ami-0cf6039178fba16d7"
   public_key           = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCcw/EMwquklJpalpwUXFDMqQPBNQEP7MotLB+TijctjsGtuN3BlI5r04w+2oI02y5ksSJyi6k2TsW/vmZA23KkJ1pbLcUv4C3C48pmGhaAoC9fBSxJwB05ofR13CGYyfgJsAqAyM8jlE2Tf5y0oVGb7jA7ln8+chcVQGv0u7UlKU4NWaF4tvmcGlVr2nqIr1lSRW+EYAEpd9Sww3HLGn3a5t0JH98o5+yPwm/+ow9GDVfja2lTFMNl3WDlvY3oDU02I7TAXqLZCGXSGZuZSjWXvD+kYwPFbPC8OlMC0YO4Xn0q9nB+xiqJ1GtXO5asy/kO/kygFxH9ntVisYZ4zPMh test-adudych"
 
   cdns = var.domain_redirect_enabled ? {
@@ -34,13 +34,13 @@ locals {
   ingress_rules = [
     { port = "80", cidr_blocks = ["0.0.0.0/0"], description = "HTTP from anywhere" },
     { port = "443", cidr_blocks = ["0.0.0.0/0"], description = "HTTPS from anywhere" },
-    { port = "0", cidr_blocks = formatlist("%s/32", jsondecode(module.vpc.nat_eip)), description = "Full access for NAT IP" }
+    { port = "0", protocol = "-1", cidr_blocks = formatlist("%s/32", jsondecode(module.vpc.nat_eip)), description = "Full access for NAT IP" }
   ]
 
   ingress_rules_full = {
     alb = concat(
       local.ingress_rules,
-      [for ip, description in var.ssh_whitelist : { port = "0", cidr_blocks = ["${ip}/32"], description = description }]
+      [for ip, description in var.ssh_whitelist : { port = "0", protocol = "-1", cidr_blocks = ["${ip}/32"], description = description }]
     )
   }
 
@@ -99,15 +99,19 @@ module "alb" {
   vpc_id                = module.vpc.vpc_id
   security_groups       = [module.sg["alb"].id]
   subnets               = module.vpc.public_subnets[*]
-  ssl_certificate_arn   = aws_acm_certificate.this.arn
+  ssl_certificate_arn   = aws_acm_certificate.second.arn
   ec2_admin_instance_id = module.ec2_instance.aws_instances_ids[0]
   deletion_protection   = var.lb_deletion_protection
   tags                  = local.tags
+
+  # depends_on = [
+  #   module.vpc
+  # ]
 }
 
 module "ec2_instance" {
   source                       = "../ec2-instance"
-  name                         = "${var.dns_name}-backend"
+  instance_name                = "${var.dns_name}-backend"
   instance_count               = 1
   ami                          = local.aws_ami_backend_name
   instance_type                = var.admin_instance_type
@@ -135,7 +139,7 @@ resource "aws_s3_bucket" "website" {
 resource "aws_s3_bucket" "website_redirect" {
   count = var.domain_redirect_enabled ? 1 : 0
 
-  bucket = var.domain_name_redirect
+  bucket = var.sub_domain_name
   acl    = "private"
   website {
     redirect_all_requests_to = aws_s3_bucket.website.id
@@ -169,9 +173,24 @@ data "aws_iam_policy_document" "s3_bucket_policy" {
 resource "aws_acm_certificate" "this" {
   provider                  = aws.virginia
   domain_name               = var.domain_name
-  subject_alternative_names = var.domain_redirect_enabled ? [var.domain_name_redirect] : []
+  subject_alternative_names = var.domain_redirect_enabled ? [var.sub_domain_name] : []
   validation_method         = "DNS"
   tags                      = local.tags
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_acm_certificate" "second" {
+  domain_name               = var.domain_name
+  subject_alternative_names = var.domain_redirect_enabled ? [var.sub_domain_name] : []
+  validation_method         = "DNS"
+  tags                      = local.tags
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_route53_record" "validation" {
@@ -205,7 +224,7 @@ resource "aws_cloudfront_distribution" "website_cdn" {
   enabled             = var.cdn_enabled
   price_class         = var.price_class
   default_root_object = "index.html"
-  aliases             = [aws_s3_bucket.website.id]
+  aliases             = [var.domain_name]
   origin {
     origin_id   = "origin-bucket-${var.domain_name}"
     domain_name = aws_s3_bucket.website.bucket_regional_domain_name
@@ -291,9 +310,9 @@ resource "aws_cloudfront_distribution" "website_cdn_redirect" {
   enabled             = var.cdn_enabled
   default_root_object = "index.html"
   price_class         = var.price_class
-  aliases             = [aws_s3_bucket.website_redirect[0].id]
+  aliases             = [var.sub_domain_name]
   origin {
-    origin_id           = "origin-bucket-${aws_s3_bucket.website_redirect[0].id}"
+    origin_id           = "origin-bucket-${var.sub_domain_name}"
     domain_name         = aws_s3_bucket.website_redirect[0].website_endpoint
     connection_attempts = 3
     connection_timeout  = 10
@@ -310,7 +329,7 @@ resource "aws_cloudfront_distribution" "website_cdn_redirect" {
     min_ttl                = "0"
     default_ttl            = "300"
     max_ttl                = "1200"
-    target_origin_id       = "origin-bucket-${aws_s3_bucket.website_redirect[0].id}"
+    target_origin_id       = "origin-bucket-${var.sub_domain_name}"
     viewer_protocol_policy = var.viewer_protocol_policy
     compress               = true
     forwarded_values {
@@ -331,7 +350,7 @@ resource "aws_cloudfront_distribution" "website_cdn_redirect" {
     ssl_support_method             = var.ssl_support_method
     minimum_protocol_version       = var.minimum_protocol_version
   }
-  tags = merge({ Name = var.domain_name_redirect }, local.tags)
+  tags = merge({ Name = var.sub_domain_name }, local.tags)
 
   lifecycle {
     ignore_changes = [origin, viewer_certificate]

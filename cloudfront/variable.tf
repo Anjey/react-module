@@ -4,7 +4,7 @@ variable "domain_name" {
   description = "The main domain name in which will be redirecting"
 }
 
-variable "domain_name_redirect" {
+variable "sub_domain_name" {
   default     = ""
   type        = string
   description = "Domain name, website from which will be redirecting to main domain name. For example: domain.com -> www.domain.com"

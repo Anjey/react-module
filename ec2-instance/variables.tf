@@ -1,5 +1,10 @@
-variable "name" {
-  description = "Resource name (used as prefix)"
+# variable "name" {
+#   description = "Resource name (used as prefix)"
+#   type        = string
+# }
+
+variable "instance_name" {
+  description = "Instance name"
   type        = string
 }
 

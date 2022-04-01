@@ -22,7 +22,7 @@ resource "aws_instance" "this" {
   #   iam_instance_profile        = var.iam_instance_profile
   vpc_security_group_ids = var.vpc_security_group_ids
   subnet_id              = element(var.subnets_ids, count.index)
-  tags                   = var.tags
+  tags                   = merge({ Name = var.instance_name }, var.tags)
 
   root_block_device {
     volume_size = var.root_volume_size
