@@ -10,7 +10,7 @@ terraform {
 
 
 locals {
-  react_dir            = "${path.module}/../../../../../../../../../code"
+  react_dir            = "${path.module}/../../../../../../../../../react-code"
   react_build_dir      = "${local.react_dir}/build/"
   react_package        = "package.json"
   react_app            = "App.js"
