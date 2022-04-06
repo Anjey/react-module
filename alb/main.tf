@@ -67,6 +67,7 @@ resource "aws_lb_listener" "listener443" {
     type             = "forward"
     target_group_arn = aws_lb_target_group.this.arn
   }
+  lifecycle { create_before_destroy = true }
 }
 
 # resource "aws_lb_listener_rule" "reditect_apex" {

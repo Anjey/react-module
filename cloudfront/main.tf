@@ -11,7 +11,7 @@ terraform {
 
 locals {
   react_dir            = "${path.module}/../../../../../../../../../react-code"
-  react_build_dir      = "${local.react_dir}/build/"
+  react_build_dir      = "${local.react_dir}/build"
   react_package        = "package.json"
   react_app            = "App.js"
   aws_ami_backend_name = "ami-0cf6039178fba16d7"
@@ -54,9 +54,6 @@ data "aws_route53_zone" "selected" {
   private_zone = false
 }
 
-# data "aws_ssm_parameter" "nat_eip" {
-#   name = var.ssm_nat_eip
-# }
 
 # data "aws_ami" "ubuntu_backend" {
 #   # most_recent = true
@@ -76,7 +73,7 @@ resource "aws_key_pair" "this" {
 module "vpc" {
   source                = "../vpc"
   vpc_name              = "${var.dns_name}-vpc"
-  vpc_cidr_block        = "10.0.0.0/16"
+  vpc_cidr_block        = "10.0.0.0/16" # export to terragrunt
   private_subnets_cidrs = ["10.0.100.0/24", "10.0.200.0/24"]
   public_subnets_cidrs  = ["10.0.10.0/24", "10.0.20.0/24"]
   ssm_nat_eip           = var.ssm_nat_eip
@@ -99,7 +96,7 @@ module "alb" {
   vpc_id                = module.vpc.vpc_id
   security_groups       = [module.sg["alb"].id]
   subnets               = module.vpc.public_subnets[*]
-  ssl_certificate_arn   = aws_acm_certificate.second.arn
+  ssl_certificate_arn   = aws_acm_certificate.alb.arn
   ec2_admin_instance_id = module.ec2_instance.aws_instances_ids[0]
   deletion_protection   = var.lb_deletion_protection
   tags                  = local.tags
@@ -126,7 +123,7 @@ module "ec2_instance" {
 }
 
 resource "aws_s3_bucket" "website" {
-  bucket = var.domain_name
+  bucket = var.main_domain_name
   acl    = "private"
   website {
     index_document = "index.html"
@@ -139,7 +136,7 @@ resource "aws_s3_bucket" "website" {
 resource "aws_s3_bucket" "website_redirect" {
   count = var.domain_redirect_enabled ? 1 : 0
 
-  bucket = var.sub_domain_name
+  bucket = var.redirect_domain_name
   acl    = "private"
   website {
     redirect_all_requests_to = aws_s3_bucket.website.id
@@ -170,10 +167,19 @@ data "aws_iam_policy_document" "s3_bucket_policy" {
   }
 }
 
+resource "aws_s3_bucket_object" "website" {
+  for_each = fileset("${local.react_build_dir}/", "*")
+
+  bucket = aws_s3_bucket.website.id
+  key    = each.value
+  source = "${local.react_build_dir}/${each.value}"
+  etag   = filemd5("${local.react_build_dir}/${each.value}")
+}
+
 resource "aws_acm_certificate" "this" {
   provider                  = aws.virginia
-  domain_name               = var.domain_name
-  subject_alternative_names = var.domain_redirect_enabled ? [var.sub_domain_name] : []
+  domain_name               = var.main_domain_name
+  subject_alternative_names = var.domain_redirect_enabled ? [var.redirect_domain_name] : []
   validation_method         = "DNS"
   tags                      = local.tags
 
@@ -182,9 +188,9 @@ resource "aws_acm_certificate" "this" {
   }
 }
 
-resource "aws_acm_certificate" "second" {
-  domain_name               = var.domain_name
-  subject_alternative_names = var.domain_redirect_enabled ? [var.sub_domain_name] : []
+resource "aws_acm_certificate" "alb" {
+  domain_name               = var.main_domain_name
+  subject_alternative_names = var.domain_redirect_enabled ? [var.redirect_domain_name] : []
   validation_method         = "DNS"
   tags                      = local.tags
 
@@ -224,16 +230,16 @@ resource "aws_cloudfront_distribution" "website_cdn" {
   enabled             = var.cdn_enabled
   price_class         = var.price_class
   default_root_object = "index.html"
-  aliases             = [var.domain_name]
+  aliases             = [var.main_domain_name]
   origin {
-    origin_id   = "origin-bucket-${var.domain_name}"
+    origin_id   = "origin-bucket-${var.main_domain_name}"
     domain_name = aws_s3_bucket.website.bucket_regional_domain_name
     s3_origin_config {
       origin_access_identity = aws_cloudfront_origin_access_identity.origin_access_identity.cloudfront_access_identity_path
     }
   }
   origin {
-    origin_id           = "origin-alb-${var.domain_name}"
+    origin_id           = "origin-alb-${var.main_domain_name}"
     domain_name         = module.alb.alb_domain_name
     connection_attempts = 3
     connection_timeout  = 10
@@ -268,7 +274,7 @@ resource "aws_cloudfront_distribution" "website_cdn" {
       path_pattern     = ordered_cache_behavior.value
       allowed_methods  = var.allowed_methods
       cached_methods   = var.cached_methods
-      target_origin_id = "origin-alb-${var.domain_name}"
+      target_origin_id = "origin-alb-${var.main_domain_name}"
 
       forwarded_values {
         query_string = false
@@ -291,15 +297,15 @@ resource "aws_cloudfront_distribution" "website_cdn" {
     }
   }
   viewer_certificate {
-    cloudfront_default_certificate = true
+    cloudfront_default_certificate = false
     acm_certificate_arn            = aws_acm_certificate.this.arn
     ssl_support_method             = var.ssl_support_method
     minimum_protocol_version       = var.minimum_protocol_version
   }
-  tags = merge({ Name = var.domain_name }, local.tags)
+  tags = merge({ Name = var.main_domain_name }, local.tags)
 
   lifecycle {
-    ignore_changes = [viewer_certificate]
+    # ignore_changes = [viewer_certificate]
     # prevent_destroy = true
   }
 }
@@ -310,9 +316,9 @@ resource "aws_cloudfront_distribution" "website_cdn_redirect" {
   enabled             = var.cdn_enabled
   default_root_object = "index.html"
   price_class         = var.price_class
-  aliases             = [var.sub_domain_name]
+  aliases             = [var.redirect_domain_name]
   origin {
-    origin_id           = "origin-bucket-${var.sub_domain_name}"
+    origin_id           = "origin-bucket-${var.redirect_domain_name}"
     domain_name         = aws_s3_bucket.website_redirect[0].website_endpoint
     connection_attempts = 3
     connection_timeout  = 10
@@ -329,7 +335,7 @@ resource "aws_cloudfront_distribution" "website_cdn_redirect" {
     min_ttl                = "0"
     default_ttl            = "300"
     max_ttl                = "1200"
-    target_origin_id       = "origin-bucket-${var.sub_domain_name}"
+    target_origin_id       = "origin-bucket-${var.redirect_domain_name}"
     viewer_protocol_policy = var.viewer_protocol_policy
     compress               = true
     forwarded_values {
@@ -345,12 +351,12 @@ resource "aws_cloudfront_distribution" "website_cdn_redirect" {
     }
   }
   viewer_certificate {
-    cloudfront_default_certificate = true
+    cloudfront_default_certificate = false
     acm_certificate_arn            = aws_acm_certificate.this.arn
     ssl_support_method             = var.ssl_support_method
     minimum_protocol_version       = var.minimum_protocol_version
   }
-  tags = merge({ Name = var.sub_domain_name }, local.tags)
+  tags = merge({ Name = var.redirect_domain_name }, local.tags)
 
   lifecycle {
     ignore_changes = [origin, viewer_certificate]
@@ -390,10 +396,10 @@ resource "null_resource" "cdn_invalidation" {
     command = "aws cloudfront create-invalidation --distribution-id ${aws_cloudfront_distribution.website_cdn.id} --paths '/*'"
   }
   triggers = {
-    bucket_object_change = null_resource.bucket_object.id
+    bucket_object_change = join("", [for k in aws_s3_bucket.website[*] : k.id]) #null_resource.bucket_object.id
   }
   depends_on = [
     aws_cloudfront_distribution.website_cdn,
-    null_resource.bucket_object
+    # null_resource.bucket_object
   ]
 }
