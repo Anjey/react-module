@@ -140,3 +140,7 @@ variable "instance_root_volume_size" {
   type        = number
   default     = 20
 }
+
+variable "ami_owner_account_ids" {
+  type = list(string)
+}

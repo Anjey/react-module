@@ -1,12 +1,12 @@
-terraform {
-  required_version = ">= 1.0.4"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 3.56.0"
-    }
-  }
-}
+# terraform {
+#   required_version = ">= 1.0.4"
+#   required_providers {
+#     aws = {
+#       source  = "hashicorp/aws"
+#       version = "~> 3.56.0"
+#     }
+#   }
+# }
 
 resource "aws_lb" "this" {
   name                       = "${var.name}-lb"
@@ -69,35 +69,6 @@ resource "aws_lb_listener" "listener443" {
   }
   lifecycle { create_before_destroy = true }
 }
-
-# resource "aws_lb_listener_rule" "reditect_apex" {
-#   count = var.root_domain != "" ? 1 : 0
-
-#   listener_arn = aws_lb_listener.listener443.arn
-#   priority     = 103
-
-#   action {
-#     type = "redirect"
-
-#     redirect {
-#       host        = var.front_domain
-#       path        = "/#{path}"
-#       query       = "#{query}"
-#       port        = "443"
-#       protocol    = "HTTPS"
-#       status_code = "HTTP_301"
-#     }
-#   }
-
-#   condition {
-#     host_header {
-#       values = [var.root_domain]
-#     }
-#   }
-# }
-
-
-# Target Groups Attachments
 
 resource "aws_lb_target_group_attachment" "admin" {
   target_group_arn = aws_lb_target_group.this.arn

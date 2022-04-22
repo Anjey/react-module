@@ -8,3 +8,8 @@ output "domain_names" {
 output "instance_ip" {
   value = module.ec2_instance.instances_eips
 }
+
+
+# output "bucket_obj" {
+#   value = [for k in aws_s3_bucket_object.website : k.etag]
+# }

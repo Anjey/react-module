@@ -1,12 +1,12 @@
-terraform {
-  required_version = ">= 1.0.4"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 3.56.0"
-    }
-  }
-}
+# terraform {
+#   required_version = ">= 1.0.4"
+#   required_providers {
+#     aws = {
+#       source  = "hashicorp/aws"
+#       version = "~> 3.56.0"
+#     }
+#   }
+# }
 
 data "aws_availability_zones" "available" {
   state = "available"
@@ -16,26 +16,6 @@ resource "aws_vpc" "this" {
   cidr_block = var.vpc_cidr_block
   tags       = merge({ Name = var.vpc_name }, var.tags)
 }
-
-# resource "aws_default_security_group" "default" {
-#   vpc_id = aws_vpc.this.id
-
-#   ingress {
-#     protocol  = -1
-#     self      = true
-#     from_port = 0
-#     to_port   = 0
-#   }
-
-#   egress {
-#     from_port   = 0
-#     to_port     = 0
-#     protocol    = "-1"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-
-#   tags = merge({ VPC_id = aws_vpc.this.id }, var.tags)
-# }
 
 resource "aws_subnet" "private" {
   count = length(var.private_subnets_cidrs)

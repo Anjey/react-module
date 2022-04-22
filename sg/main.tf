@@ -1,12 +1,12 @@
-terraform {
-  required_version = ">= 1.0.4"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 3.56.0"
-    }
-  }
-}
+# terraform {
+#   required_version = ">= 1.0.4"
+#   required_providers {
+#     aws = {
+#       source  = "hashicorp/aws"
+#       version = "~> 3.56.0"
+#     }
+#   }
+# }
 
 resource "aws_security_group" "this" {
   name_prefix = "${var.name}-"
@@ -18,7 +18,7 @@ resource "aws_security_group" "this" {
 
     content {
       from_port       = element(split("-", ingress.value.port), 0)
-      to_port         = element(split("-", ingress.value.port), 1) # Returns ingress.value.port[0] value if ingress.value.port[1] element does not exist
+      to_port         = element(split("-", ingress.value.port), 1)
       protocol        = lookup(ingress.value, "protocol", "tcp")
       cidr_blocks     = lookup(ingress.value, "cidr_blocks", [])
       security_groups = lookup(ingress.value, "security_groups", [])
